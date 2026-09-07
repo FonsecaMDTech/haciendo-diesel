@@ -20,31 +20,45 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Descargar XML nacional de la CNE (con reintentos)
+      - name: Descargar datos de la CNE (prices + places, con reintentos)
         run: |
           set -e
-          URL="https://publicacionexterna.azurewebsites.net/publicaciones/prices"
-          ok=""
-          for i in 1 2 3 4 5; do
-            echo "Intento $i..."
-            if curl -fsSL --max-time 120 "$URL" -o precios.xml; then
-              if grep -q "<estacion" precios.xml; then
-                echo "Descarga OK ($(wc -c < precios.xml) bytes)"
-                ok="yes"; break
+          BASE="https://publicacionexterna.azurewebsites.net/publicaciones"
+          descargar () {
+            # $1 = nombre (prices|places), $2 = archivo destino
+            local ok=""
+            for i in 1 2 3 4 5; do
+              echo "[$1] Intento $i..."
+              if curl -fsSL --max-time 180 -A "Mozilla/5.0 (haciendo-diesel)" \
+                   -H "Accept: application/xml,text/xml,*/*" \
+                   "$BASE/$1" -o "$2"; then
+                # Aceptamos formato oficial (<place) o simplificado (<estacion)
+                if grep -q "<place\|<estacion" "$2"; then
+                  echo "[$1] Descarga OK ($(wc -c < "$2") bytes)"
+                  ok="yes"; break
+                fi
+                echo "[$1] Descargado pero sin <place>/<estacion>. Primeras líneas:"
+                head -c 600 "$2"; echo
               fi
-              echo "Descargado pero sin <estacion>; reintentando..."
+              sleep 20
+            done
+            if [ -z "$ok" ]; then
+              echo "::error::No se pudo descargar un XML válido de $1 tras 5 intentos."
+              exit 1
             fi
-            sleep 20
-          done
-          if [ -z "$ok" ]; then
-            echo "::error::No se pudo descargar un XML válido de la CNE tras 5 intentos."
-            exit 1
-          fi
+          }
+          descargar prices prices.xml
+          descargar places places.xml
+          echo "--- Estructura real de prices.xml (primeros 600 bytes) ---"
+          head -c 600 prices.xml; echo
+          echo "--- Estructura real de places.xml (primeros 600 bytes) ---"
+          head -c 600 places.xml; echo
 
       - name: Calcular diésel (falla si datos malos/viejos)
         run: |
           set -e
-          python3 diesel_valle.py --xml precios.xml --json-out public/diesel.json --max-dias 3
+          python3 diesel_valle.py --xml prices.xml --places places.xml \
+            --json-out public/diesel.json --max-dias 3
           echo "--- diesel.json generado ---"
           cat public/diesel.json
 
