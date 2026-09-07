@@ -1,0 +1,12 @@
+{
+  "diesel_promedio": 27.01,
+  "min": 26.79,
+  "max": 27.25,
+  "estaciones_usadas": 7,
+  "estaciones_lista": 7,
+  "municipio": "Valle de Santiago",
+  "fuente": "CNE/SENER",
+  "fecha_archivo": null,
+  "actualizado_iso": "2026-09-07T18:36:53.941425",
+  "actualizado_texto": "7 de septiembre de 2026"
+}
