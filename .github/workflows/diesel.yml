@@ -1,0 +1,57 @@
+name: Actualizar precio diésel (Valle de Santiago)
+
+on:
+  schedule:
+    - cron: "30 1 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repo
+        uses: actions/checkout@v4
+
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Descargar XML nacional de la CNE (con reintentos)
+        run: |
+          set -e
+          URL="https://publicacionexterna.azurewebsites.net/publicaciones/prices"
+          ok=""
+          for i in 1 2 3 4 5; do
+            echo "Intento $i..."
+            if curl -fsSL --max-time 120 "$URL" -o precios.xml; then
+              if grep -q "<estacion" precios.xml; then
+                echo "Descarga OK ($(wc -c < precios.xml) bytes)"
+                ok="yes"; break
+              fi
+              echo "Descargado pero sin <estacion>; reintentando..."
+            fi
+            sleep 20
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::No se pudo descargar un XML válido de la CNE tras 5 intentos."
+            exit 1
+          fi
+
+      - name: Calcular diésel (falla si datos malos/viejos)
+        run: |
+          set -e
+          python3 diesel_valle.py --xml precios.xml --json-out public/diesel.json --max-dias 3
+          echo "--- diesel.json generado ---"
+          cat public/diesel.json
+
+      - name: Publicar en GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: gh-pages
+          keep_files: true
