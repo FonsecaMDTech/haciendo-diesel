@@ -1,177 +1,169 @@
 #!/usr/bin/env python3
 """
-combustibles_valle.py - Precios de DIESEL, GASOLINA REGULAR, GASOLINA PREMIUM
-Calcula el promedio de tres tipos de combustible en Valle de Santiago, Guanajuato.
-Descarga datos de CNE/SENER y publica JSON para cada tipo.
+diesel_valle.py - Precios de DIESEL, GASOLINA REGULAR y GASOLINA PREMIUM
+en Valle de Santiago, Guanajuato. Fuente: CNE/SENER (datos abiertos).
+
+Descarga dos archivos:
+  - prices: <place place_id="..."><gas_price type="regular">22.95</gas_price>...</place>
+  - places: <place place_id="..."><cre_id>PL/.../EXP/ES/...</cre_id></place>
+y los cruza para obtener permiso -> precios.
 """
 
 import requests
 import xml.etree.ElementTree as ET
 import json
-from datetime import datetime
 import sys
+from datetime import datetime
 
-# Estaciones de Valle de Santiago (permisos)
+# --- Estaciones de Valle de Santiago (verificadas en el portal CNE 2026-09-06) ---
 PERMISOS_VALLE = {
-    "PL/2353/EDP/ES/2015": "Servicios Llanster",
-    "PL/2894/EDP/ES/2022": "Servicios Conalcar",
-    "PL/2133/EDP/ES/2013": "Servicio Puenta Grande",
-    "PL/2131/EDP/ES/2013": "Mega Gasolineras (Niños Héroes)",
-    "PL/2132/EDP/ES/2013": "Mega Gasolineras (Revolución)",
-    "PL/3375/EDP/ES/2018": "Estación SD Espitia",
-    "PL/1270/EDP/ES/2015": "Ruiz Guzmán",
+    "PL/2355/EXP/ES/2015":  "Servicio Anillo Vial (Carr. Jaral-Valle Km 16.4)",
+    "PL/23949/EXP/ES/2022": "Servicios Conalcer (Carr. Valle-Guarapo Km 16.3)",
+    "PL/2869/EXP/ES/2015":  "Servicio Puente Grande (Blvd. Niños Héroes 17)",
+    "PL/21338/EXP/ES/2018": "Mega Gasolineras (Blvd. Niños Héroes 82)",
+    "PL/21892/EXP/ES/2018": "Mega Gasolineras (Blvd. Revolución 30)",
+    "PL/10752/EXP/ES/2015": "Estación SD Espitia (Carr. Valtierra-Pueblo Nuevo Km 15)",
+    "PL/12799/EXP/ES/2015": "Ruiz Guzmán (Blvd. Niños Héroes 69)",
 }
+
+BASE = "https://publicacionexterna.azurewebsites.net/publicaciones"
+HEADERS = {"User-Agent": "Mozilla/5.0 (haciendo-diesel)", "Accept": "application/xml,text/xml,*/*"}
 
 COMBUSTIBLES = {
-    "diesel": "Diesel",
-    "gasolina_regular": "Gasolina Regular",
-    "gasolina_premium": "Gasolina Premium",
+    "diesel":           ("Diesel",           "diesel"),
+    "gasolina_regular": ("Gasolina Regular", "regular"),
+    "gasolina_premium": ("Gasolina Premium", "premium"),
 }
+
+PRECIO_MIN, PRECIO_MAX = 15.0, 40.0
 
 MESES_ES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
             "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
 
-def obtener_fecha_mexicana():
-    """Devuelve la fecha en formato mexicano: '9 de septiembre de 2026'"""
+def fecha_mexicana():
     hoy = datetime.now()
     return f"{hoy.day} de {MESES_ES[hoy.month]} de {hoy.year}"
 
 
-def descargar_xml_cne():
-    """Descarga el XML de precios de CNE/SENER"""
-    print("📥 Descargando datos de CNE/SENER...")
-    url = "https://publicacionexterna.azurewebsites.net/publicaciones/prices"
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return ET.fromstring(response.content)
-    except Exception as e:
-        print(f"❌ Error descargando XML: {e}")
-        sys.exit(1)
+def descargar(nombre):
+    url = f"{BASE}/{nombre}"
+    print(f"📥 Descargando {nombre}...")
+    for intento in range(1, 4):
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=180)
+            r.raise_for_status()
+            return ET.fromstring(r.content)
+        except Exception as e:
+            print(f"   Intento {intento} falló: {e}")
+    print(f"❌ No se pudo descargar {nombre}")
+    sys.exit(1)
 
 
-def extraer_precios(root, tipo_combustible):
-    """
-    Extrae precios de un tipo de combustible específico.
-    tipo_combustible: "diesel", "gasolina_regular", "gasolina_premium"
-    """
-    precios = {}
-    
-    # Buscar todas las estaciones en el XML
-    for estacion in root.findall(".//estacion"):
-        permiso = estacion.get("permiso", "").strip()
-        
-        # Solo procesar si está en nuestra lista de Valle de Santiago
+def mapa_permisos(root_places):
+    """place_id -> permiso (cre_id)"""
+    out = {}
+    for pl in root_places.iter("place"):
+        pid = pl.get("place_id")
+        cre = pl.findtext("cre_id")
+        if pid and cre:
+            out[pid] = cre.strip().upper()
+    return out
+
+
+def precios_por_place(root_prices):
+    """place_id -> {tipo_lower: precio}"""
+    out = {}
+    for pl in root_prices.iter("place"):
+        pid = pl.get("place_id")
+        if not pid:
+            continue
+        d = {}
+        for gp in pl.findall("gas_price"):
+            tipo = (gp.get("type") or "").strip().lower()
+            try:
+                d[tipo] = float((gp.text or "").strip())
+            except ValueError:
+                pass
+        if d:
+            out[pid] = d
+    return out
+
+
+def extraer(precios_pid, pid_a_permiso, palabra):
+    """permiso -> precio para el combustible cuyo type contiene 'palabra'"""
+    out = {}
+    for pid, tipos in precios_pid.items():
+        permiso = pid_a_permiso.get(pid)
         if permiso not in PERMISOS_VALLE:
             continue
-        
-        # Buscar el producto con el tipo correcto
-        for producto in estacion.findall("producto"):
-            tipo = (producto.get("tipo") or "").lower().strip()
-            precio_str = (producto.get("precio") or "").strip()
-            
-            # Identificar el tipo de combustible
-            buscar = ""
-            if tipo_combustible == "diesel":
-                buscar = "diesel"
-            elif tipo_combustible == "gasolina_regular":
-                buscar = "regular"
-            elif tipo_combustible == "gasolina_premium":
-                buscar = "premium"
-            
-            # Si coincide, extraer precio
-            if buscar in tipo.lower():
-                try:
-                    precio = float(precio_str)
-                    precios[permiso] = precio
-                except ValueError:
-                    continue
-    
-    return precios
+        for tipo, precio in tipos.items():
+            if palabra in tipo and PRECIO_MIN <= precio <= PRECIO_MAX:
+                out[permiso] = precio
+    return out
 
 
-def calcular_estadisticas(precios_dict):
-    """Calcula promedio, mín, máx de un conjunto de precios"""
-    if not precios_dict:
-        return None
-    
-    valores = list(precios_dict.values())
-    promedio = sum(valores) / len(valores)
-    minimo = min(valores)
-    maximo = max(valores)
-    
+def stats(precios):
+    v = list(precios.values())
     return {
-        "promedio": round(promedio, 2),
-        "minimo": round(minimo, 2),
-        "maximo": round(maximo, 2),
-        "cantidad_estaciones": len(precios_dict),
+        "promedio": round(sum(v) / len(v), 2),
+        "minimo": round(min(v), 2),
+        "maximo": round(max(v), 2),
+        "cantidad": len(v),
     }
 
 
-def crear_json(tipo_combustible, estadisticas):
-    """Crea el JSON a publicar para un tipo de combustible"""
-    if not estadisticas:
-        return None
-    
-    nombre_tipo = COMBUSTIBLES.get(tipo_combustible, tipo_combustible)
-    
-    return {
-        "tipo_combustible": nombre_tipo,
-        "region": "Valle de Santiago, Guanajuato",
-        "moneda": "MXN",
-        "precio_promedio": estadisticas["promedio"],
-        "precio_minimo": estadisticas["minimo"],
-        "precio_maximo": estadisticas["maximo"],
-        "diferencia": round(estadisticas["maximo"] - estadisticas["minimo"], 2),
-        "estaciones_muestreadas": estadisticas["cantidad_estaciones"],
-        "fecha_actualizacion": obtener_fecha_mexicana(),
-        "fuente": "CNE/SENER",
-        "nota": f"Promedio de {estadisticas['cantidad_estaciones']} estaciones en Valle de Santiago. Actualizado diariamente.",
-    }
-
-
-def guardar_json(nombre_archivo, datos_json):
-    """Guarda JSON a archivo en public/"""
-    ruta = f"public/{nombre_archivo}"
-    try:
-        with open(ruta, "w", encoding="utf-8") as f:
-            json.dump(datos_json, f, ensure_ascii=False, indent=2)
-        print(f"✅ Guardado: {ruta}")
-    except Exception as e:
-        print(f"❌ Error guardando {ruta}: {e}")
+def guardar(nombre, data):
+    ruta = f"public/{nombre}"
+    with open(ruta, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print(f"✅ Guardado: {ruta}")
 
 
 def main():
     print("🚀 Iniciando descarga de precios de combustibles...\n")
-    
-    # Descargar XML
-    root = descargar_xml_cne()
-    
-    # Procesar cada tipo de combustible
-    for tipo_clave, nombre_tipo in COMBUSTIBLES.items():
-        print(f"💧 Procesando {nombre_tipo}...")
-        
-        # Extraer precios
-        precios = extraer_precios(root, tipo_clave)
-        
-        if precios:
-            # Calcular estadísticas
-            stats = calcular_estadisticas(precios)
-            
-            # Crear JSON
-            json_data = crear_json(tipo_clave, stats)
-            
-            # Guardar
-            archivo = f"{tipo_clave}.json"
-            guardar_json(archivo, json_data)
-            
-            print(f"   → Promedio: ${json_data['precio_promedio']} MXN/L")
-            print(f"   → Rango: ${json_data['precio_minimo']}-${json_data['precio_maximo']}\n")
-        else:
-            print(f"   ⚠️  No se encontraron precios para {nombre_tipo}\n")
-    
-    print("✅ Proceso completado!")
+    root_prices = descargar("prices")
+    root_places = descargar("places")
+
+    pid_a_permiso = mapa_permisos(root_places)
+    precios_pid = precios_por_place(root_prices)
+    print(f"📍 {len(precios_pid)} estaciones con precios, {len(pid_a_permiso)} con permiso\n")
+
+    hoy = fecha_mexicana()
+    resumen = {}
+
+    for clave, (nombre, palabra) in COMBUSTIBLES.items():
+        print(f"💧 Procesando {nombre}...")
+        precios = extraer(precios_pid, pid_a_permiso, palabra)
+        if not precios:
+            print(f"   ⚠️  No se encontraron precios para {nombre}\n")
+            continue
+        s = stats(precios)
+        data = {
+            "tipo_combustible": nombre,
+            "region": "Valle de Santiago, Guanajuato",
+            "moneda": "MXN",
+            "precio_promedio": s["promedio"],
+            "precio_minimo": s["minimo"],
+            "precio_maximo": s["maximo"],
+            "estaciones_muestreadas": s["cantidad"],
+            "estaciones_lista": len(PERMISOS_VALLE),
+            "fecha_actualizacion": hoy,
+            "actualizado_iso": datetime.now().isoformat(),
+            "fuente": "CNE/SENER",
+            "nota": f"Promedio de {s['cantidad']} estaciones en Valle de Santiago. Fuente: CNE/SENER. Confirme en su gasolinera antes de cargar.",
+        }
+        guardar(f"{clave}.json", data)
+        resumen[clave] = data
+        print(f"   → Promedio ${s['promedio']} MXN/L (rango ${s['minimo']}–${s['maximo']}, {s['cantidad']} estaciones)\n")
+
+    if resumen:
+        guardar("combustibles.json", {"region": "Valle de Santiago, Guanajuato",
+                                       "fecha_actualizacion": hoy, "combustibles": resumen})
+        print("✅ Proceso completado!")
+    else:
+        print("❌ Ninguna estación válida. Revisa permisos.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
