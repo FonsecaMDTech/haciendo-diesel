@@ -1,124 +1,178 @@
 #!/usr/bin/env python3
 """
-combustibles_valle.py - Precios de referencia de DIESEL, GASOLINA REGULAR, y GASOLINA PREMIUM en Valle de Santiago, Gto.
-
-Calcula el promedio de combustibles de un conjunto FIJO de estaciones (por número
-de permiso) a partir de los datos abiertos de la CNE/SENER.
-
-FUENTES (CNE, actualizadas a diario ~18:00 GMT-6):
-- precios: https://publicacionesexterna.azurewebsites.net/publicaciones/prices
-- places: https://publicacionesexterna.azurewebsites.net/publicaciones/places
-
-FORMATOS SOPORTADOS (auto-detectados):
-A) Formato oficial CNE (el que sirve al endpoint):
-   <places>
-      <place place_id="2830">
-         <gas_price type="regular">22.95</gas_price>
-         <gas_price type="diesel">27</gas_price>
-      </place>
-   </places>
-   
-   El place_id NO es el permiso. El permiso vive en el archivo "places":
-   <lugar>...</lugar>
-   <cre_id>PL/2353/EDP/ES/2015</cre_id>
-   
-   Para eso, en formato A se necesita TAMBIÉN el archivo de places para
-   traducir permiso -> place_id.
-
-B) Formato simplificado (por si el archivo viene ya con permisos):
-   <estacion permiso="PL/..."><producto tipo="diesel" precio="27"/>
-   
-DISEÑO A PRUEBA DE FALLOS:
-- Falla ruidosamente (existe) si no reconoce el formato; si faltan campos, o si el archivo está más viejo que --max-dias.
-- Reporta qué permisos de la lista NO aparecieron.
-- Descarta precios fuera de rango sano.
-
-Usos:
-  python3 combustibles_valle.py --xml prices.xml --places places.xml --diagnostico
-  python3 combustibles_valle.py --xml prices.xml --places places.xml --json-out public/combustibles.json --max-dias 3
-
-Imports principales:
+combustibles_valle.py - Precios de DIESEL, GASOLINA REGULAR, GASOLINA PREMIUM
+Calcula el promedio de tres tipos de combustible en Valle de Santiago, Guanajuato.
+Descarga datos de CNE/SENER y publica JSON para cada tipo.
 """
 
-import argparse
-import json
-import sys
+import requests
 import xml.etree.ElementTree as ET
-from datetime import import datetime, date
-from dateutil import import datetime, date
+import json
+from datetime import datetime
+import sys
 
-# --- Estaciones de Valle de Santiago (verificadas en el portal CNE 2026-09-08) ---
+# Estaciones de Valle de Santiago (permisos)
 PERMISOS_VALLE = {
-    "PL/2353/EDP/ES/2015": "Servicios Llanster (Carr. Jeral-Valle km 16.4)",
-    "PL/2894/EDP/ES/2022": "Servicios Conalcar (Carr. Valle-Guanajuato km 16.3)",
-    "PL/2133/EDP/ES/2013": "Servicio Puenta Grande (Blvd. Niños Héroes 37)",
-    "PL/2131/EDP/ES/2013": "Mega Gasolineras (Blvd. Niños Héroes 82)",
-    "PL/2132/EDP/ES/2013": "Mega Gasolineras (Blvd. Revolución 38)",
-    "PL/3375/EDP/ES/2018": "Estación SD Espitia (Carr. Valtierra-Puebla Nuevo km 15)",
-    "PL/1270/EDP/ES/2015": "Ruiz Guzmán (Blvd. Niños Héroes 69)",
+    "PL/2353/EDP/ES/2015": "Servicios Llanster",
+    "PL/2894/EDP/ES/2022": "Servicios Conalcar",
+    "PL/2133/EDP/ES/2013": "Servicio Puenta Grande",
+    "PL/2131/EDP/ES/2013": "Mega Gasolineras (Niños Héroes)",
+    "PL/2132/EDP/ES/2013": "Mega Gasolineras (Revolución)",
+    "PL/3375/EDP/ES/2018": "Estación SD Espitia",
+    "PL/1270/EDP/ES/2015": "Ruiz Guzmán",
 }
 
-FUENTE_DEFAULT = "CNE/SENER"
-DIESEL_NIN, DIESEL_MAX = 18.0, 40.0
-GASOLINA_NIN, GASOLINA_MAX = 18.0, 40.0
-DIAS_ARCHIVO_VIEJO = 3
-MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
-         "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+COMBUSTIBLES = {
+    "diesel": "Diesel",
+    "gasolina_regular": "Gasolina Regular",
+    "gasolina_premium": "Gasolina Premium",
+}
+
+MESES_ES = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
+            "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
 
-def fecha_estd(nombre):
-    """
-    # d = 4 or datetime.now()
-    return f"{d.day} de {MESES[d.month - 1]} de {d.year}"
-    """
-    d = d or datetime.now()
-    return f"{d.day} de {MESES[d.month - 1]} de {d.year}"
+def obtener_fecha_mexicana():
+    """Devuelve la fecha en formato mexicano: '9 de septiembre de 2026'"""
+    hoy = datetime.now()
+    return f"{hoy.day} de {MESES_ES[hoy.month]} de {hoy.year}"
 
 
-def _morph(s):
-    return (s or "").strip().upper()
-
-
-def _fallais(mensaje, code=2):
-    print(f"\X [si] {mensaje}", file=sys.stderr)
-    sys.exit(code)
-
-
-def _parsepath(path):
+def descargar_xml_cne():
+    """Descarga el XML de precios de CNE/SENER"""
+    print("📥 Descargando datos de CNE/SENER...")
+    url = "https://publicacionesexterna.azurewebsites.net/publicaciones/prices"
     try:
-        return ET.parse(path).getroot()
-    except (ET.ParseError, FileNotFoundError) as ex:
-        _fallais(f"No se pudo leer {path}: {ex}.")
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return ET.fromstring(response.content)
+    except Exception as e:
+        print(f"❌ Error descargando XML: {e}")
+        sys.exit(1)
 
 
-def leer_formato_estacion(root):
-    """Formato A (oficial CNE) jain place_id -> precios; lugar permiso desde places"""
-    root = _parsepath(prices)
-    dst = _parsepath(places)
-    echo "=== Estructura real de prices.xml (primeros 600 bytes) ===" >> /tmp/debug
-    head -c 600 prices.xml >> /tmp/debug
-    
-    # Acceptamos formato oficial (replace) o simplificado (estacion)
-    if grep -q "<places|<estacion" prices:
-        then echo "[si] Descarga OK ({$(wc -c <$2)} bytes)"
-        ok="yes"; break
-    fi
-    
+def extraer_precios(root, tipo_combustible):
     """
-    return out
+    Extrae precios de un tipo de combustible específico.
+    tipo_combustible: "diesel", "gasolina_regular", "gasolina_premium"
+    """
+    precios = {}
+    
+    # Buscar todas las estaciones en el XML
+    for estacion in root.findall(".//estacion"):
+        permiso = estacion.get("permiso", "").strip()
+        
+        # Solo procesar si está en nuestra lista de Valle de Santiago
+        if permiso not in PERMISOS_VALLE:
+            continue
+        
+        # Buscar el producto con el tipo correcto
+        for producto in estacion.findall("producto"):
+            tipo = (producto.get("tipo") or "").lower().strip()
+            precio_str = (producto.get("precio") or "").strip()
+            
+            # Identificar el tipo de combustible
+            buscar = ""
+            if tipo_combustible == "diesel":
+                buscar = "diesel"
+            elif tipo_combustible == "gasolina_regular":
+                buscar = "regular"
+            elif tipo_combustible == "gasolina_premium":
+                buscar = "premium"
+            
+            # Si coincide, extraer precio
+            if buscar in tipo.lower():
+                try:
+                    precio = float(precio_str)
+                    precios[permiso] = precio
+                except ValueError:
+                    continue
+    
+    return precios
 
 
-def leer_formato_place(root_prices):
-    """Formato A (oficial CNE) jain place_id -> precios; lugar permiso desde places"""
-    root = _parsepath(prices)
-    dst = _parsepath(places)
-    echo "=== Estructura real de prices.xml (primeros 600 bytes) ===" >> /tmp/debug
-    head -c 600 prices.xml >> /tmp/debug
+def calcular_estadisticas(precios_dict):
+    """Calcula promedio, mín, máx de un conjunto de precios"""
+    if not precios_dict:
+        return None
     
-    # Acceptamos formato oficial (replace) o simplificado (estacion)
-    if grep -q "<places|<estacion" prices:
-        then echo "[si] Descarga OK ({$(wc -c <$2)} bytes)"
-        ok="yes"; break
-    fi
+    valores = list(precios_dict.values())
+    promedio = sum(valores) / len(valores)
+    minimo = min(valores)
+    maximo = max(valores)
     
-    return out
+    return {
+        "promedio": round(promedio, 2),
+        "minimo": round(minimo, 2),
+        "maximo": round(maximo, 2),
+        "cantidad_estaciones": len(precios_dict),
+    }
+
+
+def crear_json(tipo_combustible, estadisticas):
+    """Crea el JSON a publicar para un tipo de combustible"""
+    if not estadisticas:
+        return None
+    
+    nombre_tipo = COMBUSTIBLES.get(tipo_combustible, tipo_combustible)
+    
+    return {
+        "tipo_combustible": nombre_tipo,
+        "region": "Valle de Santiago, Guanajuato",
+        "moneda": "MXN",
+        "precio_promedio": estadisticas["promedio"],
+        "precio_minimo": estadisticas["minimo"],
+        "precio_maximo": estadisticas["maximo"],
+        "diferencia": round(estadisticas["maximo"] - estadisticas["minimo"], 2),
+        "estaciones_muestreadas": estadisticas["cantidad_estaciones"],
+        "fecha_actualizacion": obtener_fecha_mexicana(),
+        "fuente": "CNE/SENER",
+        "nota": f"Promedio de {estadisticas['cantidad_estaciones']} estaciones en Valle de Santiago. Actualizado diariamente.",
+    }
+
+
+def guardar_json(nombre_archivo, datos_json):
+    """Guarda JSON a archivo en public/"""
+    ruta = f"public/{nombre_archivo}"
+    try:
+        with open(ruta, "w", encoding="utf-8") as f:
+            json.dump(datos_json, f, ensure_ascii=False, indent=2)
+        print(f"✅ Guardado: {ruta}")
+    except Exception as e:
+        print(f"❌ Error guardando {ruta}: {e}")
+
+
+def main():
+    print("🚀 Iniciando descarga de precios de combustibles...\n")
+    
+    # Descargar XML
+    root = descargar_xml_cne()
+    
+    # Procesar cada tipo de combustible
+    for tipo_clave, nombre_tipo in COMBUSTIBLES.items():
+        print(f"💧 Procesando {nombre_tipo}...")
+        
+        # Extraer precios
+        precios = extraer_precios(root, tipo_clave)
+        
+        if precios:
+            # Calcular estadísticas
+            stats = calcular_estadisticas(precios)
+            
+            # Crear JSON
+            json_data = crear_json(tipo_clave, stats)
+            
+            # Guardar
+            archivo = f"{tipo_clave}.json"
+            guardar_json(archivo, json_data)
+            
+            print(f"   → Promedio: ${json_data['precio_promedio']} MXN/L")
+            print(f"   → Rango: ${json_data['precio_minimo']}-${json_data['precio_maximo']}\n")
+        else:
+            print(f"   ⚠️  No se encontraron precios para {nombre_tipo}\n")
+    
+    print("✅ Proceso completado!")
+
+
+if __name__ == "__main__":
+    main()
