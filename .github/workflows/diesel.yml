@@ -1,8 +1,8 @@
-name: Actualizar precio diésel (Valle de Santiago)
+name: Actualizar precios de combustibles (diesel, gasolina, Valle de Santiago)
 
 on:
   schedule:
-    - cron: "30 1 * * *"
+    - cron: "0 13 * * *"  # 7:00 AM Mexico time (1:00 PM UTC)
   workflow_dispatch: {}
 
 permissions:
@@ -20,52 +20,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Descargar datos de la CNE (prices + places, con reintentos)
-        run: |
-          set -e
-          BASE="https://publicacionexterna.azurewebsites.net/publicaciones"
-          descargar () {
-            # $1 = nombre (prices|places), $2 = archivo destino
-            local ok=""
-            for i in 1 2 3 4 5; do
-              echo "[$1] Intento $i..."
-              if curl -fsSL --max-time 180 -A "Mozilla/5.0 (haciendo-diesel)" \
-                   -H "Accept: application/xml,text/xml,*/*" \
-                   "$BASE/$1" -o "$2"; then
-                # Aceptamos formato oficial (<place) o simplificado (<estacion)
-                if grep -q "<place\|<estacion" "$2"; then
-                  echo "[$1] Descarga OK ($(wc -c < "$2") bytes)"
-                  ok="yes"; break
-                fi
-                echo "[$1] Descargado pero sin <place>/<estacion>. Primeras líneas:"
-                head -c 600 "$2"; echo
-              fi
-              sleep 20
-            done
-            if [ -z "$ok" ]; then
-              echo "::error::No se pudo descargar un XML válido de $1 tras 5 intentos."
-              exit 1
-            fi
-          }
-          descargar prices prices.xml
-          descargar places places.xml
-          echo "--- Estructura real de prices.xml (primeros 600 bytes) ---"
-          head -c 600 prices.xml; echo
-          echo "--- Estructura real de places.xml (primeros 600 bytes) ---"
-          head -c 600 places.xml; echo
+      - name: Instalar dependencias
+        run: pip install requests
 
-      - name: Calcular diésel (falla si datos malos/viejos)
-        run: |
-          set -e
-          python3 diesel_valle.py --xml prices.xml --places places.xml \
-            --json-out public/diesel.json --max-dias 3
-          echo "--- diesel.json generado ---"
-          cat public/diesel.json
+      - name: Ejecutar script de precios
+        run: python3 diesel_valle.py
 
       - name: Publicar en GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./public
-          publish_branch: gh-pages
           keep_files: true
