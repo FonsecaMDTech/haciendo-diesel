@@ -41,7 +41,7 @@ def obtener_fecha_mexicana():
 def descargar_xml_cne():
     """Descarga el XML de precios de CNE/SENER"""
     print("📥 Descargando datos de CNE/SENER...")
-    url = "https://publicacionesexterna.azurewebsites.net/publicaciones/prices"
+    url = "https://publicacionexterna.azurewebsites.net/publicaciones/prices"
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
