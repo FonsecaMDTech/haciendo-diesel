@@ -1,0 +1,40 @@
+{
+  "updated": "2026-09-10",
+  "businesses": [
+    {
+      "name": "Abarrotes ejemplo",
+      "category": { "en": "Groceries", "es": "Abarrotes" },
+      "description": { "en": "Everyday groceries, tortillas, and Haciendo order pickup.", "es": "Abarrotes, tortillas y entrega de pedidos Haciendo." },
+      "hours": { "en": "Mon–Sat 8am–8pm", "es": "Lun–Sáb 8am–8pm" },
+      "phone": "",
+      "updated": "2026-09-10"
+    }
+  ],
+  "faqs": [
+    {
+      "q": { "en": "Where is San Diego Quiriceo?", "es": "¿Dónde está San Diego Quiriceo?" },
+      "a": { "en": "A rancho in the municipality of Valle de Santiago, Guanajuato, in the Bajío region of central Mexico.", "es": "Una comunidad rural del municipio de Valle de Santiago, Guanajuato, en el Bajío." },
+      "keywords": ["location", "where", "ubicación", "map", "guanajuato"]
+    },
+    {
+      "q": { "en": "Does Haciendo deliver?", "es": "¿Haciendo hace entregas?" },
+      "a": { "en": "Orders are picked up at partner stores or delivered locally; details are confirmed with each order.", "es": "Los pedidos se recogen en tiendas aliadas o se entregan localmente; los detalles se confirman en cada pedido." },
+      "keywords": ["delivery", "entrega", "pedido", "order", "pickup"]
+    }
+  ],
+  "events": [
+    {
+      "title": { "en": "Sample fiesta", "es": "Fiesta de ejemplo" },
+      "date": "2026-12-12",
+      "place": { "en": "Main plaza", "es": "Plaza principal" },
+      "text": { "en": "Replace with a real, confirmed event.", "es": "Reemplazar con un evento real y confirmado." }
+    }
+  ],
+  "rancho": {
+    "intro": { "en": "San Diego Quiriceo is a farming community near Valle de Santiago, known for its fields, crater lakes nearby, and close-knit families with ties across the border.", "es": "San Diego Quiriceo es una comunidad agrícola cerca de Valle de Santiago, conocida por sus parcelas, las lagunas de cráter cercanas y familias unidas con lazos al otro lado de la frontera." },
+    "highlights": [
+      { "title": { "en": "The fields", "es": "El campo" }, "text": { "en": "Corn, sorghum, and vegetables define the seasons here.", "es": "Maíz, sorgo y hortalizas marcan las temporadas." } },
+      { "title": { "en": "Getting here", "es": "Cómo llegar" }, "text": { "en": "Closest airport is León (BJX), about two hours by road. Chato can pass along a ride request.", "es": "El aeropuerto más cercano es León (BJX), a unas dos horas por carretera. Chato puede pasar tu solicitud de viaje." } }
+    ]
+  }
+}
