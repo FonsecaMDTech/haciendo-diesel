@@ -2,13 +2,13 @@
   "tipo_combustible": "Diesel",
   "region": "Valle de Santiago, Guanajuato",
   "moneda": "MXN",
-  "precio_promedio": 27.01,
+  "precio_promedio": 26.97,
   "precio_minimo": 26.79,
-  "precio_maximo": 27.25,
+  "precio_maximo": 27.0,
   "estaciones_muestreadas": 7,
   "estaciones_lista": 7,
-  "fecha_actualizacion": "26 de septiembre de 2026",
-  "actualizado_iso": "2026-09-26T13:11:47.028019",
+  "fecha_actualizacion": "27 de septiembre de 2026",
+  "actualizado_iso": "2026-09-27T13:11:52.757645",
   "fuente": "CNE/SENER",
   "nota": "Promedio de 7 estaciones en Valle de Santiago. Fuente: CNE/SENER. Confirme en su gasolinera antes de cargar."
 }
