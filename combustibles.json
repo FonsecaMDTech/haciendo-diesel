@@ -1,6 +1,6 @@
 {
   "region": "Valle de Santiago, Guanajuato",
-  "fecha_actualizacion": "25 de octubre de 2026",
+  "fecha_actualizacion": "26 de octubre de 2026",
   "combustibles": {
     "diesel": {
       "tipo_combustible": "Diesel",
@@ -11,8 +11,8 @@
       "precio_maximo": 27.0,
       "estaciones_muestreadas": 7,
       "estaciones_lista": 7,
-      "fecha_actualizacion": "25 de octubre de 2026",
-      "actualizado_iso": "2026-10-25T16:58:55.653835",
+      "fecha_actualizacion": "26 de octubre de 2026",
+      "actualizado_iso": "2026-10-26T19:03:45.748631",
       "fuente": "CNE/SENER",
       "nota": "Promedio de 7 estaciones en Valle de Santiago. Fuente: CNE/SENER. Confirme en su gasolinera antes de cargar."
     },
@@ -25,8 +25,8 @@
       "precio_maximo": 24.0,
       "estaciones_muestreadas": 7,
       "estaciones_lista": 7,
-      "fecha_actualizacion": "25 de octubre de 2026",
-      "actualizado_iso": "2026-10-25T16:58:55.657608",
+      "fecha_actualizacion": "26 de octubre de 2026",
+      "actualizado_iso": "2026-10-26T19:03:45.751895",
       "fuente": "CNE/SENER",
       "nota": "Promedio de 7 estaciones en Valle de Santiago. Fuente: CNE/SENER. Confirme en su gasolinera antes de cargar."
     },
@@ -39,8 +39,8 @@
       "precio_maximo": 29.99,
       "estaciones_muestreadas": 6,
       "estaciones_lista": 7,
-      "fecha_actualizacion": "25 de octubre de 2026",
-      "actualizado_iso": "2026-10-25T16:58:55.660630",
+      "fecha_actualizacion": "26 de octubre de 2026",
+      "actualizado_iso": "2026-10-26T19:03:45.754730",
       "fuente": "CNE/SENER",
       "nota": "Promedio de 6 estaciones en Valle de Santiago. Fuente: CNE/SENER. Confirme en su gasolinera antes de cargar."
     }
